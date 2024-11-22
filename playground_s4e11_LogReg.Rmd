@@ -19,22 +19,26 @@ blockquote { font-size: 1em;}
   top: 0;
   width: max-content;
   margin-left: auto;
-  color: white;
+  font-weight: bold;
   background-color: black;
   padding: 5px;
 }
 </style>
 
-<div class="stick-top"><a href="#contents">Table of Contents</a></div>
+<div class="stick-top"><a href="#contents" style="color: white;">Table of Contents</a></div>
 
 <div style="display:inline-block;"> 
-  <a href="" style="margin-left:40vw;">
+  <a href="https://github.com/NBPub/Health_Data_Demonstrations/blob/main/playground_s4e11_LogReg.Rmd" style="margin-left:40vw;">
     <img src="https://raw.githubusercontent.com/rstudio/rmarkdown/main/man/figures/logo.png" 
      width="50" title="R Markdown file"/>
   </a>
-  <a href="" style="margin-left:25px;">
+  <a href="https://github.com/NBPub/Health_Data_Demonstrations" style="margin-left:25px;">
     <img src="https://images.seeklogo.com/logo-png/30/2/github-logo-png_seeklogo-304612.png" 
      width="50" title="Repository"/>
+  </a>
+  <a href="https://github.com/NBPub/Health_Data_Demonstrations/blob/main/playground_s4e11_LogReg.nb.html" style="margin-left:25px;">
+    <img src="https://cdn.iconscout.com/icon/free/png-512/free-html-5-logo-icon-download-in-svg-png-gif-file-formats--programming-langugae-language-pack-logos-icons-1175208.png"
+     width="50" title="HTML Notebook"/>
   </a>
 </div>
 
@@ -48,6 +52,8 @@ blockquote { font-size: 1em;}
      - [Profession](#profession)
      - [Degree](#degree)
    - [Ordinal Encoding and Cleaning](#clean-and-encode-ordinal-features)
+     - [Sleep Duration](#sleep_duration)
+     - [Dietary Habits](#dietary_habits)
    - [Coalesce Class Specific Features](#combine-class-specific-features)
    - [Binary and One-Hot Encoding](#encode-binary-responses)
  - [Data Exploration](#exploration-tables-and-graphs)
@@ -86,6 +92,8 @@ blockquote { font-size: 1em;}
      - The aim of this notebook is not to develop a performant model, but I may 
    update this section with competition submission results and briefly describe 
    approaches taken outside of this notebook.
+     - Accordingly, opportunities for more extensive data preparation, such as 
+     feature engineering, were not employed in this notebook and modeling effort.
  - R Libraries, document created with **[R Markdown](https://rmarkdown.rstudio.com/)**
    - **[dplyr](https://dplyr.tidyverse.org/)**, data processing
    - **[gtsummary](https://www.danieldsjoberg.com/gtsummary/)**, tables and statistics
@@ -116,7 +124,7 @@ glimpse(data[1:8,])
 
  - cleaning, encoding, and dropping features
    - preparing data for simplest model engines, make all features numerical
- 
+
 ### Unused Features to be Dropped
 
  - *will do brief exploration and analysis here*
