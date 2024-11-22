@@ -1,0 +1,1190 @@
+---
+title: "Exploring Mental Health Data (Kaggle)"
+author: "NBPub"
+output: html_notebook
+---
+
+<style>
+.scroll-output {
+  height: 30vh;
+  width: 90vw;
+  overflow-y: scroll;
+  overflow-x: scroll;
+}
+
+blockquote { font-size: 1em;}
+
+.stick-top {
+  position: sticky;
+  top: 0;
+  width: max-content;
+  margin-left: auto;
+  color: white;
+  background-color: black;
+  padding: 5px;
+}
+</style>
+
+<div class="stick-top"><a href="#contents">Table of Contents</a></div>
+
+<div style="display:inline-block;"> 
+  <a href="" style="margin-left:40vw;">
+    <img src="https://raw.githubusercontent.com/rstudio/rmarkdown/main/man/figures/logo.png" 
+     width="50" title="R Markdown file"/>
+  </a>
+  <a href="" style="margin-left:25px;">
+    <img src="https://images.seeklogo.com/logo-png/30/2/github-logo-png_seeklogo-304612.png" 
+     width="50" title="Repository"/>
+  </a>
+</div>
+
+## Contents
+ - [Overview](#overview)
+ - [Data Preparation](#data-preparation)
+   - [Unused Features](#unused-features-to-be-dropped)
+     - [Name](#name)
+     - [CPGA](#cpga)
+     - [City](#city)
+     - [Profession](#profession)
+     - [Degree](#degree)
+   - [Ordinal Encoding and Cleaning](#clean-and-encode-ordinal-features)
+   - [Coalesce Class Specific Features](#combine-class-specific-features)
+   - [Binary and One-Hot Encoding](#encode-binary-responses)
+ - [Data Exploration](#exploration-tables-and-graphs)
+   - [Binary Features](#binary-features)
+   - [Continuous Features](#continuous-features)
+     - [Collinearity ](#relationship-with-student---working-professional)
+   - [Ordinal Features](#ordinal-features)
+ - *Final Preparation Steps*
+   - [Clean Columns](#drop-columns)
+   - [Missing Data](#missing-values)
+   - [Summary Tables](#final-summary-tables)
+ - [Modeling](#modeling)
+   - [Feature Importance](#feature-importance)
+   - [Evaluation and Metrics](#model-evaluation)
+ - [Model Comparison](#comparison-to-glm-engine)
+   - [Side-by-Side](#direct-comparison)
+
+
+## Overview
+
+ - Background
+   - synthetic dataset provided by 
+ [Kaggle](https://www.kaggle.com/competitions/playground-series-s4e11/data), 
+ based on a previously published Depression [survey](https://www.kaggle.com/datasets/sumansharmadataworld/depression-surveydataset-for-analysis)
+     - > comprehensive survey aimed at understanding the factors contributing to 
+     depression risk among adults . . . conducted across various cities, 
+     targeting individuals from diverse backgrounds and professions
+   - the goal was to extract insights on everyday (non-clinical) factors that may 
+   correlate with mental health risks and to develop models for mental health 
+   prediction
+ - Purpose
+   - **This notebook will exemplify data exploration, cleaning, and processing, 
+   and then ultimately train a simple logistic regression model for prediction of 
+   the target feature, `Depression`.**
+   - details and justifications are provided in each section
+     - The aim of this notebook is not to develop a performant model, but I may 
+   update this section with competition submission results and briefly describe 
+   approaches taken outside of this notebook.
+ - R Libraries, document created with **[R Markdown](https://rmarkdown.rstudio.com/)**
+   - **[dplyr](https://dplyr.tidyverse.org/)**, data processing
+   - **[gtsummary](https://www.danieldsjoberg.com/gtsummary/)**, tables and statistics
+     - also used **[knitr](https://yihui.org/knitr/)**
+   - **[ggplot2](https://ggplot2.tidyverse.org/)**, graphing
+   - **[parsnip](https://parsnip.tidymodels.org/)**, unified model interface for
+   logistic regression models, utilizing the following engines
+     - [glmnet](https://glmnet.stanford.edu/)
+     - [glm](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/glm)
+   - **[yardstick](https://yardstick.tidymodels.org/)**, model metrics
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(gtsummary)
+library(glmnet)
+
+data <- read_csv("datasets/playground-series-s4e11_train.csv")
+
+# remove spaces and special characters in features for plotting and indexing
+names(data) <- gsub(" ", "_", names(data))
+names(data) <- gsub("\\?", "", names(data))
+names(data) <- gsub("/", "_", names(data))
+
+glimpse(data[1:8,])
+```
+## Data Preparation
+
+ - cleaning, encoding, and dropping features
+   - preparing data for simplest model engines, make all features numerical
+ 
+### Unused Features to be Dropped
+
+ - *will do brief exploration and analysis here*
+     - features would likely improve model predictions, but will still consider 
+     these outside of the scope of this notebook and modeling effort
+ - **id, Name**
+   - shouldn't have relationship to target, id is simply an index
+   - could theoretically extract dialect / cultural information from names
+ - **CGPA**
+   - student specific (most rows missing data as survey is ~20% students)
+     - see [binary feature exploration](#binary-features)
+   - weak relationship to target, depression rates steady across CGPA range
+     - may be more useful if considered in conjunction with `Degree`
+ - **City, Profession, Degree**
+   - most respondents within top 30-40 common responses, but decent amount 
+   occupy less common or completely unique categories
+   - extensive cleaning required for `Profession` and `Degree`
+   - too many values to simply encode
+
+
+#### Name
+```{r}
+count(data, Name, sort = TRUE)
+```
+
+```{r echo=FALSE, warning=FALSE}
+ggplot(
+  count(data, Name, sort = TRUE), aes(x=n)) + 
+  geom_histogram(bins=50)+ scale_x_continuous(trans='log10') + 
+  scale_y_continuous(trans='log10') + 
+  labs(title="Survey Respondents' Name Counts", 
+       subtitle="Some names very common (right), others not so much (left), bar at 1 represents unique names") + 
+  xlab("Respondents sharing name (logscale)") + ylab("Count (logscale)")
+```
+#### CGPA
+
+<div class="scroll-output">
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+tbl_summary(data, by=Depression,
+            include=c("CGPA",))
+
+ggplot(
+  data, aes(fill=as.factor(Depression), x=CGPA)
+) + geom_histogram(position="fill", binwidth=0.25) + 
+  labs(title="Depression Proportions vs Student CGPA",
+       subtitle="Relatively uniform depression rates across CGPA range",
+       fill="Reported Depression") + 
+  xlab("Student CGPA") + 
+  ylab("Population Proportion")
+
+ggplot(
+  data, aes(y=Depression, x=CGPA)
+) + geom_smooth() + 
+  labs(title="Predicted Depression Rate vs Student CGPA",
+       subtitle="Generalized Additive Model (GAM) | y ~ s(x, bs = 'cs')") + 
+  xlab("Student CGPA") + 
+  ylab("Fit Depression Rate")
+```
+</div>
+<br>
+
+#### City
+
+ - city counts and depression rates of most common **cities** (table below), 
+ recall overall rate is `18%`
+   - Hyderabad and Thane stand out on the high end
+   - Meerut and Mumbai on the low end
+
+<div class="scroll-output">
+```{r style="max-height: 0.5vh;"}
+count(data, City, sort = TRUE)
+cities <- count(data, City, sort = TRUE) %>% filter(n>3000) %>% select(City)
+data_city <- data %>% filter(City %in% cities$City)
+tbl_summary(data_city, by=Depression, include=City, percent="row") 
+```
+</div>
+<br>
+
+#### Profession
+
+ - profession counts and depression rates of most common professions (table below),
+ recall overall rate is `18%`
+   - all of the most common professions have lower depression rates than the 
+   overall survey population
+   - "Unknown" likely corresponds mostly to students, who 
+   [have a relatively high rate](#binary-features) of depression
+   
+<div class="scroll-output">
+```{r}
+count(data, Profession, sort = TRUE)
+profs <- count(data, Profession, sort = TRUE) %>% filter(n>2000) %>% select(Profession)
+data_profs <- data %>% filter(Profession %in% profs$Profession)
+tbl_summary(data_profs, by=Depression, include=Profession, percent="row") 
+```
+</div>
+<br>
+
+#### Degree
+
+ - degree counts and depression rates of most common degrees (second table), 
+ recall overall rate is `18%`
+ - initial look indicates varied rates between degrees, but each degree was 
+ considered for current students and professionals separately (third table)
+   - students base depression rate is ~59% and working professionals are ~8%
+   - this important confounding feature will be discussed further in the 
+   [Collinearity ](#relationship-with-student---working-professional) section
+   - "Class 12" (assuming this is a American high school / GED equivalent) has 
+   highest depression rates for current students and professionals by a wide 
+   margin
+   - "M. Ed" has relatively low depression rates for students and professionals
+
+<div class="scroll-output">
+```{r}
+count(data, Degree, sort = TRUE)
+degs <- count(data, Degree, sort = TRUE) %>% filter(n>4000) %>% select(Degree)
+data_degs <- data %>% filter(Degree %in% degs$Degree)
+tbl_summary(data_degs, by=Depression, include=Degree, percent="row") 
+tbl_strata(data_degs %>% select(Degree, Working_Professional_or_Student, Depression), 
+           strata=Working_Professional_or_Student, 
+           .tbl_fun = ~.x |> tbl_summary(by=Depression, percent="row"))
+```
+</div>
+
+### Clean and Encode (Ordinal Features)
+
+#### Sleep_Duration
+
+- categories: <5, 5-6, 7-8, >8 hours | *will encode with values 1-4, respectively*
+  - some values obviously fit within categories and will be changed
+    - made some arbitrary choices, like "4-6 hours" and "1-6 hours"
+  - bogus and unclear values were dropped
+
+
+```{r}
+dplyr::count(data, Sleep_Duration, sort = TRUE)
+```
+
+```{r}
+# encode sleep, first value in array indicates overall grouping
+
+data <- data %>% mutate(Sleep_Rank = case_match(pull(data,Sleep_Duration),
+  c("Less than 5 hours", "3-4 hours", "4-5 hours", "2-3 hours", "1-6 hours", 
+    "45", "1-2 hours", "1-3 hours", "3-6 hours") ~ 1,
+  c("5-6 hours", "4-6 hours", "6-7 hours") ~ 2,
+  c("7-8 hours", "6-8 hours", "8 hours") ~ 3,
+  c("More than 8 hours", "10-11 hours", "8-9 hours", "9-11 hours") ~ 4
+))
+
+paste(sum(is.na(data["Sleep_Rank"])), "sleep values missing after encoding")
+
+```
+
+#### Dietary_Habits
+
+- categories: Unhealthy, Moderate, Healthy | *will encode with values 1-3*
+  - very small proportion of data outside these answers and were dropped,
+  though some could be inferred
+    - ex: are "No" or "No Healthy" equivalent to "Unhealthy"?
+  
+```{r}
+dplyr::count(data, Dietary_Habits, sort = TRUE)
+```
+
+```{r}
+data <- data %>% mutate(Diet_Rank = case_match(pull(data,Dietary_Habits),
+  c("Unhealthy") ~ 1,
+  c("Moderate") ~ 2,
+  c("Healthy") ~ 3,
+))
+
+paste(sum(is.na(data["Diet_Rank"])), "diet values missing after encoding")
+```
+### Combine Class-Specific Features
+
+ - Common features specific to Students or Working Professionals, these 
+ correspond to the majority of missing survey data
+   - Academic or Work Pressure --> `Pressure`
+   - Study or Job Satisfaction --> `Satisfaction`
+
+```{r}
+data <- data %>% mutate(Pressure = coalesce(Academic_Pressure, Work_Pressure))
+data <- data %>% mutate(Satisfaction = coalesce(Study_Satisfaction, Job_Satisfaction))
+
+head(data[c("Working_Professional_or_Student", "Academic_Pressure", 
+            "Work_Pressure", "Pressure")])
+
+head(data[c("Working_Professional_or_Student", "Study_Satisfaction",
+            "Job_Satisfaction", "Satisfaction")])
+```
+### Encode Binary Responses
+
+  - `Gender`, `Have_you_ever_had_suicidal_thoughts_`, 
+  `Family_History_of_Mental_Illness`, and `Working_Professional_or_Student` 
+    - *survey only contains two responses to gender, not enforcing a binary*
+  - Could have used binary encoding for gender and student vs working professional, 
+  but chose to use **one-hot encoding** to see how models handled features
+
+```{r}
+# one hot encode
+data <- data %>% mutate(Gender_M = ifelse(Gender=="Male",1,0))
+data <- data %>% mutate(Gender_F = ifelse(Gender=="Female",1,0))
+
+data <- data %>% mutate(Professional = ifelse(Working_Professional_or_Student==
+                                                "Working Professional",1,0))
+data <- data %>% mutate(Student = ifelse(Working_Professional_or_Student==
+                                                "Student",1,0))
+
+# binary encode, character to numerical
+data <- data %>% mutate(Suicidal_Thoughts = ifelse(
+  Have_you_ever_had_suicidal_thoughts_=="Yes",1,0))
+
+data <- data %>% mutate(Family_History = ifelse(
+  Family_History_of_Mental_Illness=="Yes",1,0))
+```
+
+## Exploration Tables and Graphs
+ - feature distributions, target relationships, and interrelationships
+ - *`Depression = 1` corresponds to `"yes"` and `0` to `"no"`*
+   
+### Binary Features
+
+ - response counts
+   - binary feature responses are balanced, except for students vs working 
+ professionals and target feature, `Depression`
+ - relationship to Depression
+   - having suicidal thoughts and being a student are tied much more strongly to 
+ reported depression than the alternatives (not having suicidal thoughts, being 
+ a working professional)
+   - gender and family history of mental illness do not strongly influence target
+   - *table presented against Depression in 
+ [final summary](#final-summary-tables)*
+
+
+```{r echo=F}
+tbl_summary(data, include=c("Gender","Have_you_ever_had_suicidal_thoughts_",
+                            "Family_History_of_Mental_Illness",
+                            "Working_Professional_or_Student",
+                            "Depression"))
+```
+
+<div class="scroll-output">
+**Gender**
+```{r echo=FALSE}
+prop_f <- 100*dim(filter(data, Gender_F == 1 & Depression==1))[1] / 
+  dim(filter(data, Gender_F == 1))[1]
+
+prop_m <- 100*dim(filter(data, Gender_M == 1 & Depression==1))[1] / 
+  dim(filter(data, Gender_M == 1))[1]
+
+ggplot(
+  data, aes(x=Gender, fill=as.factor(Depression))
+) + geom_bar(position="stack") + 
+  labs(title="Depression Proportion vs Gender",
+       subtitle=paste(round(prop_f,1), "% females depressed | ",
+                      round(prop_m,1), "% males depressed"),
+       fill="Reported Depression") + 
+  xlab("Reported Gender") + 
+  ylab("Number of Survey Respondents")
+```
+**Suicidal Thoughts**
+```{r echo=FALSE}
+prop_y <- 100*dim(filter(data, Suicidal_Thoughts == 1 & Depression==1))[1] / 
+  dim(filter(data, Suicidal_Thoughts == 1))[1]
+
+prop_n <- 100*dim(filter(data, Suicidal_Thoughts == 0 & Depression==1))[1] / 
+  dim(filter(data, Suicidal_Thoughts == 0))[1]
+
+ggplot(
+  data, aes(x=Have_you_ever_had_suicidal_thoughts_, fill=as.factor(Depression))
+) + geom_bar(position="stack") +
+  labs(title="Depression Proportion vs Suicidal Thoughts",
+       subtitle=paste(round(prop_n,1), "% depressed without suicidal thoughts | ",
+                      round(prop_y,1), "% depressed with suicidal thoughts"),
+       fill="Reported Depression") + 
+  xlab("Reported Having Suicidal Thoughts") + 
+  ylab("Number of Survey Respondents")
+```
+**Family History of Mental Illness**
+```{r echo=FALSE}
+prop_y <- 100*dim(filter(data, Family_History == 1 & Depression==1))[1] / 
+  dim(filter(data, Family_History == 1))[1]
+
+prop_n <- 100*dim(filter(data, Family_History == 0 & Depression==1))[1] / 
+  dim(filter(data, Family_History == 0))[1]
+
+ggplot(
+  data, aes(x=Family_History_of_Mental_Illness, fill=as.factor(Depression))
+) + geom_bar(position="stack") + 
+  labs(title="Depression Proportion vs Family History of Mental Illness",
+       subtitle=paste(round(prop_n,1), "% depressed without family history | ",
+                      round(prop_y,1), "% depressed with family history"),
+       fill="Reported Depression") + 
+  xlab("Reported Having Family History of Mental Illness") + 
+  ylab("Number of Survey Respondents")
+```
+**Student or Working Professional**
+```{r echo=FALSE}
+prop_s <- 100*dim(filter(data, Student == 1 & Depression==1))[1] / 
+  dim(filter(data, Student == 1))[1]
+
+prop_w <- 100*dim(filter(data, Professional == 1 & Depression==1))[1] / 
+  dim(filter(data, Professional == 1))[1]
+
+ggplot(
+  data, aes(x=Working_Professional_or_Student, fill=as.factor(Depression))
+) + geom_bar(position="stack") + 
+  labs(title="Depression Proportion vs Student/Professional",
+       subtitle=paste(round(prop_s,1), "% students depressed | ",
+                      round(prop_w,1), "% professionals depressed"),
+       fill="Reported Depression") + 
+  xlab("Student or Working Professional") + 
+  ylab("Number of Survey Respondents")
+```
+</div>
+
+### Continuous Features 
+
+ - higher work-study hours and lower ages match up with much higher rates of 
+ reported depression
+   - *table shows each feature against Depression: 0 (no) or 1 (yes)*
+ - however each feature is entangled with the student/working professional 
+ classification of survey respondents
+
+ 
+```{r}
+tbl_summary(data, by=Depression,
+            include=c("Age", "Work_Study_Hours",))
+```
+
+<div class="scroll-output">
+
+**Work or Study Hours**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Work_Study_Hours)
+) + geom_histogram(binwidth=1, position="stack") + 
+  labs(title="Survey Time Working/Studying Distribution with/without Depression",
+       subtitle="Higher proportion depressed that spend more time working/studying",
+       fill="Reported Depression") + 
+  xlab("Hours spent working or studying") + 
+  ylab("Survey Respondents")
+
+ggplot(
+  data, aes(y=Depression, x=Work_Study_Hours)
+) + geom_smooth() + 
+  labs(title="Predicted Depression Rate vs Time Working/Studying",
+       subtitle="Generalized Additive Model (GAM) | y ~ s(x, bs = 'cs')") + 
+  xlab("Hours spent working or studying") + 
+  ylab("Fit Depression Rate")
+```
+
+**Age**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Age)
+) + geom_histogram(binwidth=1, position="stack") + 
+  labs(title="Survey Age Distribution with/without Depression",
+       subtitle="Higher proportion depressed at lower ages",
+       fill="Reported Depression") + 
+  xlab("Age (years)") + 
+  ylab("Survey Respondents")
+
+ggplot(
+  data, aes(y=Depression, x=Age)
+) + geom_smooth() + 
+  labs(title="Predicted Depression Rate vs Respondent Age",
+       subtitle="Generalized Additive Model (GAM) | y ~ s(x, bs = 'cs')") + 
+  xlab("Age (years)") + 
+  ylab("Fit Depression Rate")
+```
+</div><br>
+
+#### Relationship with Student - Working Professional
+
+ - three features correlate strongly to target: age, work-study hours, and 
+ being a student instead of a working professional; and are also interrelated
+ - clear age division between students and working professionals
+   - very few students older or professionals younger than 35 years
+ - students spend more hours working and studying than do professionals
+ 
+```{r} 
+tbl_strata(data %>% select(Age, Work_Study_Hours, 
+                           Working_Professional_or_Student, Depression), 
+           strata=Working_Professional_or_Student, 
+           .tbl_fun = ~.x |> tbl_summary(by=Depression, 
+                                         statistic = all_continuous() ~ 
+                                           "{mean} | {median} ({p25}, {p75})"))
+```
+
+<br><hr><br>
+
+<div class="scroll-output">
+**Age**
+```{r echo=FALSE}
+tbl_continuous(data,  variable=Age,
+               include=c("Working_Professional_or_Student", "Depression", ))
+
+n_students <- round(100*sum(data$Student)/dim(data[1]),1)
+n_pros <- round(100*sum(data$Professional)/dim(data[1]),1)
+
+ggplot(data, aes(x=Age, color=Working_Professional_or_Student,
+                 fill=Working_Professional_or_Student)) + 
+        geom_density(linewidth=1.2, alpha=0.3) + 
+        labs(title="Sharp age cutoff for Students vs Working Professionals", 
+             subtitle = paste("Survey population:", n_students, "% students | ", 
+                              n_pros, "% professionals")) + 
+        xlab("Age (yrs)") + ylab("Proportion of Respondents")
+
+ggplot(data, aes(y=Age, x=Working_Professional_or_Student,
+                 color=Working_Professional_or_Student,
+                 fill = Working_Professional_or_Student)) + 
+        geom_boxplot(alpha=0.5) + 
+        labs(title="Sharp age cutoff for Students vs Working Professionals") + 
+        ylab("Age (yrs)") + xlab("")
+```
+
+**Work-Study Hours**
+```{r echo=FALSE}
+tbl_continuous(data,  variable=Work_Study_Hours,
+               include=c("Working_Professional_or_Student", "Depression", ))
+
+ggplot(data, aes(Work_Study_Hours, col=Working_Professional_or_Student, 
+                 fill=Working_Professional_or_Student)) + 
+        geom_density(linewidth=1.2, alpha=0.3,) + 
+        labs(title="Students are busier than Professionals") + 
+        xlab("Work-Study Hours") + 
+        ylab("Proportion of Respondents")
+
+ggplot(data, aes(y=Work_Study_Hours, x=Working_Professional_or_Student,
+                 color=Working_Professional_or_Student,
+                 fill = Working_Professional_or_Student)) + 
+        geom_boxplot(alpha=0.5) + 
+        labs(title="Students are busier than Professionals") + 
+        ylab("Work-Study Hours") + xlab("")
+```
+</div><br>
+
+### Ordinal Features
+
+ - table shows separate student or working professional specific **Pressure** 
+ and **Satisfaction** to  show different rates between students and working 
+ professionals
+   - overall `Pressure` and `Satisfaction` against `Depression` is shown in the 
+   graphs below and in the [final tables](#final-summary-tables)
+ - generally low slope magnitudes and R2's indicate features don't strongly 
+ influence target alone. sign of slope (+/-) helpful indication of relationships
+   - overall feature ranges should be considered when comparing slopes
+   - *could subtract `1` to get more meaningful intercept values*
+ - `Financial_Stress` and `Pressure` show strongest relationships to `Depression`
+ - should expect self-reported, subjective features to be less useful than 
+ continuous variables. 
+   - lower granularity of ranked features is probably good for survey design, 
+   but may limit extractable target relationships
+
+<div class="scroll-output">   
+```{r}
+tbl_summary(data, by=Depression, 
+            include=c("Academic_Pressure", "Work_Pressure", 
+                         "Study_Satisfaction", "Job_Satisfaction", 
+                         "Financial_Stress", "Sleep_Rank", "Diet_Rank"),
+            percent="cell")
+```
+</div><br>
+
+
+<div class="scroll-output">  
+**Sleep**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Sleep_Rank)
+) + geom_bar(position="stack") + 
+  labs(title="Survey Sleep Distribution with/without Depression (count)",
+       subtitle="Relationship between depression and sleep rank not clear",
+       fill="Reported Depression") + 
+  xlab("Sleep Ranking (1-4), lower is less hours per night") + 
+  ylab("Survey Respondents")
+
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Sleep_Rank)
+) + geom_bar(position="fill") + 
+  labs(title="Survey Sleep Distribution with/without Depression (ratio)",
+       subtitle="Relationship between depression and sleep rank not clear",
+       fill="Reported Depression") + 
+  xlab("Sleep Ranking (1-4), lower is less hours per night") + 
+  ylab("Survey Respondent Fraction")
+
+line <- lm(Depression ~ Sleep_Rank, data)
+
+ggplot(
+  data, aes(y=Depression, x=Sleep_Rank)
+) + geom_smooth(method="glm") + 
+  labs(title="Predicted Depression Rate vs Sleep Ranking, linear fit | y~x",
+       subtitle=paste("slope:", round(line$coefficients[2],3),
+                      "| intercept:", round(line$coefficients[1],3),
+                      "| R2:", round(summary(line)$r.squared,3))) + 
+  xlab("Sleep Ranking (1-4), lower is less hours per night") + 
+  ylab("Model predicted Depression Rate")
+```
+
+**Diet**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Diet_Rank)
+) + geom_bar(position="stack") + 
+  labs(title="Survey Diet Rank with/without Depression (count)",
+       subtitle="Higher proportion depressed that reported less healthy diets",
+       fill="Reported Depression") + 
+  xlab("Diet Rank (1-3), higher is more healthy") + 
+  ylab("Survey Respondents")
+
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Diet_Rank)
+) + geom_bar(position="fill") + 
+  labs(title="Survey Diet Rank with/without Depression (ratio)",
+       subtitle="Higher proportion depressed that reported less healthy diets",
+       fill="Reported Depression") + 
+  xlab("Diet Rank (1-3), higher is more healthy") + 
+  ylab("Survey Respondent Fraction")
+
+line <- lm(Depression ~ Diet_Rank, data)
+
+ggplot(
+  data, aes(y=Depression, x=Diet_Rank)
+) + geom_smooth(method="glm") + 
+  labs(title="Predicted Depression Rate vs Diet Rank, linear fit | y~x",
+       subtitle=paste("slope:", round(line$coefficients[2],3),
+                      "| intercept:", round(line$coefficients[1],3),
+                      "| R2:", round(summary(line)$r.squared,3))) + 
+  xlab("Diet Rank (1-3), higher is more healthy") + 
+  ylab("Model predicted Depression Rate")
+```
+
+**Satisfaction (Job, Studies)**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Satisfaction)
+) + geom_bar(position="stack") + 
+  labs(title="Survey Satisfaction Distribution with/without Depression (count)",
+       subtitle="Higher proportion depressed at lower reported satisfaction",
+       fill="Reported Depression") + 
+  xlab("Work or Study Satisfaction (1-5)") + 
+  ylab("Survey Respondents")
+
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Satisfaction)
+) + geom_bar(position="fill") + 
+  labs(title="Survey Satisfaction Distribution with/without Depression (ratio)",
+       subtitle="Higher proportion depressed at lower reported satisfaction",
+       fill="Reported Depression") + 
+  xlab("Work or Study Satisfaction (1-5)") + 
+  ylab("Survey Respondent Fraction")
+
+line <- lm(Depression ~ Satisfaction, data)
+
+ggplot(
+  data, aes(y=Depression, x=Satisfaction)
+) + geom_smooth(method="glm") + 
+  labs(title="Predicted Depression Rate vs Satisfaction, linear fit | y~x",
+       subtitle=paste("slope:", round(line$coefficients[2],3),
+                      "| intercept:", round(line$coefficients[1],3),
+                      "| R2:", round(summary(line)$r.squared,3))) + 
+  xlab("Work or Study Satisfaction (1-5)") + 
+  ylab("Model predicted Depression Rate")
+```
+
+**Pressure (Work, Studies)**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Pressure)
+) + geom_bar(position="stack") + 
+  labs(title="Survey Pressure Distribution with/without Depression (count)",
+       subtitle="Higher proportion depressed at higher reported pressure",
+       fill="Reported Depression") + 
+  xlab("Work or Study Pressure (1-5)") + 
+  ylab("Survey Respondents")
+
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Pressure)
+) + geom_bar(position="fill") + 
+  labs(title="Survey Pressure Distribution with/without Depression (ratio)",
+       subtitle="Higher proportion depressed at higher reported pressure",
+       fill="Reported Depression") + 
+  xlab("Work or Study Pressure (1-5)") + 
+  ylab("Survey Respondent Fraction")
+
+line <- lm(Depression ~ Pressure, data)
+
+ggplot(
+  data, aes(y=Depression, x=Pressure)
+) + geom_smooth(method="glm") + 
+  labs(title="Predicted Depression Rate vs Pressure, linear fit | y~x",
+       subtitle=paste("slope:", round(line$coefficients[2],3),
+                      "| intercept:", round(line$coefficients[1],3),
+                      "| R2:", round(summary(line)$r.squared,3))) + 
+  xlab("Work or Study Pressure (1-5)") + 
+  ylab("Model predicted Depression Rate")
+```
+
+**Financial Stress**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Financial_Stress)
+) + geom_bar(position="stack") + 
+  labs(title="Survey Financial Stress Distribution with/without Depression (count)",
+       subtitle="Higher proportion depressed at higher reported stress",
+       fill="Reported Depression") + 
+  xlab("Financial Stress (1-5)") + 
+  ylab("Survey Respondents")
+
+ggplot(
+  data, aes(fill=as.factor(Depression), x=Financial_Stress)
+) + geom_bar(position="fill") + 
+  labs(title="Survey Financial Stress Distribution with/without Depression (ratio)",
+       subtitle="Higher proportion depressed at higher reported stress",
+       fill="Reported Depression") + 
+  xlab("Financial Stress (1-5)") + 
+  ylab("Survey Respondent Fraction")
+
+line <- lm(Depression ~ Financial_Stress, data)
+
+ggplot(
+  data, aes(y=Depression, x=Financial_Stress)
+) + geom_smooth(method="glm") + 
+  labs(title="Predicted Depression Rate vs Financial Stress, linear fit | y~x",
+       subtitle=paste("slope:", round(line$coefficients[2],3),
+                      "| intercept:", round(line$coefficients[1],3),
+                      "| R2:", round(summary(line)$r.squared,3))) + 
+  xlab("Financial Stress (1-5)") + 
+  ylab("Model predicted Depression Rate")
+```
+</div>
+
+### Drop Columns
+ - drop processed and unused features
+ - remaining features are now numeric for model
+
+```{r}
+# drop features not used for model
+# id, profession, cgpa, name, city, degree
+keep_cols <- c(
+  "Gender_M", "Gender_F", "Age", "Professional", "Student", 
+  "Suicidal_Thoughts",  "Family_History", "Work_Study_Hours",
+  "Financial_Stress", "Pressure", "Satisfaction", "Sleep_Rank", "Diet_Rank",
+  "Depression"
+)
+
+data <- data[,keep_cols]
+glimpse(data[1:10,keep_cols])
+
+```
+### Missing Values
+
+  - dropped the less than 0.6% of total responses with various missing features
+    - most rows with missing data have multiple features missing
+  - cleaning/encoding choices for **Sleep** and **Diet** features could be 
+  altered to retain more data, or features could be dropped
+
+
+```{r}
+missing <- data %>% filter(if_any(everything(), is.na))
+
+print(paste(
+  dim(missing)[1], "responses with missing data out of", dim(data)[1])
+  )
+```
+
+<div class="scroll-output">
+```{r}
+options(knitr.kable.NA=
+          "<span style='background-color:red;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>")
+knitr::kable(missing, excape=TRUE)
+```
+</div><br>
+
+```{r echo=FALSE}
+# Assess missing data
+miss_count <- data.frame(
+  name=names(data),
+  value = 100*colSums(is.na(data)/dim(data)[1])
+  )
+
+ggplot(
+  miss_count, aes(y=name, x=value, fill=value)
+) + geom_bar(stat="identity") + 
+  labs(title=paste("Missing Data out of", dim(data)[1], "total responses")) +
+  xlab("Percent Missing") + ylab("Feature")
+```
+
+```{r}
+data <- data %>% drop_na()
+```
+
+### Final Summary Tables
+
+ - feature counts with `1` and without depression `0`
+   - percentages presented per row
+ - recall overall depression rate for survey population is **18%**
+
+```{r echo=F}
+tbl_summary(data, by=Depression, 
+            include=c("Gender_M", "Gender_F", "Professional", "Student", 
+                      "Suicidal_Thoughts", "Family_History", "Age",
+                      "Work_Study_Hours"),
+            percent="row")
+```
+
+<hr>
+<div class="scroll-output">
+```{r echo=F}
+tbl_summary(data, by=Depression, 
+            include=c("Financial_Stress","Pressure", "Satisfaction", 
+                      "Sleep_Rank", "Diet_Rank"),
+            percent="row")
+``` 
+</div>
+
+
+## Modeling
+
+ - goal: build simple [logistic regression model](https://parsnip.tidymodels.org/articles/Examples.html?q=logistic_#logistic_reg-models) 
+ for proof of concept, then evaluate fit and results
+    - not worried about tuning model parameters, cross-validation, etc . . .
+    - [glmnet](https://parsnip.tidymodels.org/reference/details_logistic_reg_glmnet.html)
+    engine with L2 regularization (Ridge), later compared to 
+    [glm](https://parsnip.tidymodels.org/reference/details_logistic_reg_glm.html) 
+    engine
+ - could retain `id` for more detailed results evaluation
+ 
+*Code for loading and preparing data copied below for convenience*
+<div class="scroll-output">
+```{r}
+data <- read_csv("datasets/playground-series-s4e11_train.csv")
+
+# rename features for plotting and indexing
+names(data) <- gsub(" ", "_", names(data))
+names(data) <- gsub("\\?", "", names(data))
+names(data) <- gsub("/", "_", names(data))
+
+# clean and encode sleep and diet into ranks
+data <- data %>% mutate(Sleep_Rank = case_match(pull(data,Sleep_Duration),
+  c("Less than 5 hours", "3-4 hours", "4-5 hours", "2-3 hours", "1-6 hours", 
+    "45", "1-2 hours", "1-3 hours", "3-6 hours") ~ 1,
+  c("5-6 hours", "4-6 hours", "6-7 hours") ~ 2,
+  c("7-8 hours", "6-8 hours", "8 hours") ~ 3,
+  c("More than 8 hours", "10-11 hours", "8-9 hours", "9-11 hours") ~ 4
+))
+
+data <- data %>% mutate(Diet_Rank = case_match(pull(data,Dietary_Habits),
+  c("Unhealthy") ~ 1,
+  c("Moderate") ~ 2,
+  c("Healthy") ~ 3,
+))
+
+# coalese student/professional specific features
+data <- data %>% mutate(Pressure = coalesce(Academic_Pressure, Work_Pressure))
+data <- data %>% mutate(Satisfaction = coalesce(Study_Satisfaction, Job_Satisfaction))
+
+# encode binary features
+data <- data %>% mutate(Gender_M = ifelse(Gender=="Male",1,0))
+data <- data %>% mutate(Gender_F = ifelse(Gender=="Female",1,0))
+
+data <- data %>% mutate(Professional = ifelse(Working_Professional_or_Student==
+                                                "Working Professional",1,0))
+data <- data %>% mutate(Student = ifelse(Working_Professional_or_Student==
+                                                "Student",1,0))
+
+data <- data %>% mutate(Suicidal_Thoughts = ifelse(
+  Have_you_ever_had_suicidal_thoughts_=="Yes",1,0))
+
+data <- data %>% mutate(Family_History = ifelse(
+  Family_History_of_Mental_Illness=="Yes",1,0))
+
+# drop columns, remove missing rows
+keep_cols <- c(
+  "Gender_M", "Gender_F", "Age", "Professional", "Student", "Suicidal_Thoughts",
+  "Family_History", "Work_Study_Hours", "Financial_Stress", "Pressure", 
+  "Satisfaction", "Sleep_Rank", "Diet_Rank", "Depression"
+)
+
+data <- data[,keep_cols]
+data <- data %>% drop_na()
+```
+</div><br>
+
+***Convert target into a factor for modeling, confirm target stratification***
+
+```{r}
+data$Depression <- as.factor(data$Depression)
+
+set.seed(42)
+
+split <- initial_split(data, prop=0.8, strata=Depression)
+
+train <- split %>% training()
+test <- split %>% testing()
+
+# head(train)
+# head(test)
+
+dplyr::count(train, Depression, sort = TRUE)
+dplyr::count(test, Depression, sort = TRUE)
+```
+
+```{r}
+# GLMNet
+model <- logistic_reg(mixture=double(1), penalty=double(1),
+                      engine = "glmnet", mode="classification") %>%
+  fit(Depression ~ ., data = train)
+
+extract_spec_parsnip(model)
+tidy(model)
+```
+### Feature Importance
+
+ - feature importance corresponds with data exploration findings above
+   - `Suicidal_Thoughts` and being a `Student` vs. `Professional` most predictive
+ - positive or negative influence of features also matches above findings
+   - *note opposing values for one hot encoded, binary features*
+  
+```{r echo=FALSE}
+coeff <- tidy(model) %>% 
+  arrange(desc(abs(estimate)))
+
+ggplot(coeff, aes(y = term, x = estimate, fill = term)) + geom_col() + 
+  labs(title="Model feature importance", fill="Feature") + 
+  xlab("Model sensitivity with respsect to feature") + 
+  ylab("Survey Feature")
+```
+
+```{r}
+# Class Predictions
+pred_y <- predict(model, test,
+                      type = "class")
+
+# Class Probabilities
+pred_proba <- predict(model, test,
+                      type = "prob")
+
+results <- test %>%
+           select(Depression) %>%
+           bind_cols(pred_y, pred_proba)
+
+sample_n(results, 10)
+```
+
+### Model Evaluation
+
+**Metrics are not definitive! Only one train-test split has been evaluated.**
+
+ - model achieves reasonable accuracy! kappa score indicates its better than chance
+ - predicted probabilities for incorrect predictions are not far from `0.5` 
+ threshold, and correct predictions are more confident
+ - balanced precision and recall
+   - could make case that a model should be optimized for recall, as *minimizing* 
+   false negatives could be more important for treatment distribution. in other 
+   words, assuming a support based treatment, false positives may not be as 
+   detrimental as missing those with depression
+ - ROC and Precision-Recall curves presented without discussion, will overlay 
+ results from the next model in the following section
+
+**Prediction Probability Distributions**
+<div class="scroll-output">
+```{r echo=FALSE}
+ggplot(results %>% filter(Depression==1 & .pred_class==0), aes(x=.pred_1)) + 
+  geom_boxplot() +
+  labs(title='False Negative predicted depression probabilities',
+       subtitle="Respondents reported depression but model predicted NO") + 
+  xlab("Model predicted depression probability")
+
+ggplot(results %>% filter(Depression==0 & .pred_class==0), aes(x=.pred_1)) + 
+  geom_boxplot() +
+  labs(title='True Negative predicted depression probabilities',
+       subtitle="Model correctly predicted NO (0)") + 
+  xlab("Model predicted depression probability")
+
+
+ggplot(results %>% filter(Depression==0 & .pred_class==1), aes(x=.pred_1)) + 
+  geom_boxplot() +
+  labs(title='False Positive predicted depression probabilities',
+       subtitle="Respondents did not report depression but model predicted YES") + 
+  xlab("Model predicted depression probability")
+
+ggplot(results %>% filter(Depression==1 & .pred_class==1), aes(x=.pred_1)) + 
+  geom_boxplot() +
+  labs(title='True Positive predicted depression probabilities',
+       subtitle="Model correctly predicted YES (1)") + 
+  xlab("Model predicted depression probability")
+```
+</div><br>
+
+**Model Metrics**
+<div class="scroll-output">
+```{r}
+# data, truth, estimate
+scores <- accuracy(results, truth = Depression, estimate = .pred_class)
+
+scores <- scores %>% add_row(
+  precision(results, truth = Depression, estimate = .pred_class)
+)
+scores <- scores %>% add_row(
+  recall(results, truth = Depression, estimate = .pred_class)
+)
+scores <- scores %>% add_row(
+  kap(results, truth = Depression, estimate = .pred_class)
+)
+scores <- scores %>% add_row(
+  roc_auc(results, Depression, .pred_0)
+)
+scores
+
+cmat <- conf_mat(results, Depression, .pred_class)
+cmat
+summary(cmat)
+```
+</div><br>
+
+**Receiver Operating Characteristic and Precision-Recall Curves**
+<div class="scroll-output">
+```{r}
+roc_c <- roc_curve(results, Depression, .pred_0)
+
+ggplot(roc_c,
+       aes(x=1-specificity, y=sensitivity)) + 
+  geom_line(color="blue", linewidth=1.2) +
+  # geom_segment(aes(x=0, xend=1, y=0, yend=1), linetype=2) + 
+  geom_abline(linetype=2, ) + 
+  labs(title = "ROC Curve") + xlab("False Positive Rate") + 
+  ylab("True Positive Rate")
+
+slice_sample(roc_c, n=10) %>% arrange(.threshold)
+```
+
+```{r}
+pr_c <- pr_curve(results, Depression, .pred_0)
+
+base_rate <- 1-(sum(as.numeric(test$Depression)-1)/dim(test)[1])
+
+ggplot(pr_c,
+       aes(x=recall, y=precision)) + 
+  geom_line(color="blue", linewidth=1.2) +
+  geom_hline(yintercept=base_rate, linetype=2) + 
+  annotate("text", x=0.5, y=base_rate+.005, 
+           label=paste("test set NO Depression rate", 100*round(base_rate,2), 
+                       "%")) + 
+  labs(title = "Precision-Recall Curve") + 
+  xlab("Recall") + 
+  ylab("Precision")
+
+slice_sample(pr_c, n=10) %>% arrange(.threshold)
+```
+</div>
+
+### Comparison to GLM engine
+
+ - model handles one-hot-encoded binary features differently, 
+ only uses one of two
+   - *Gender, Student vs Professional*
+ - overall similar feature importances, opposite intercept
+ - *metrics compared directly in [section](#direct-comparison) below*
+
+<div class="scroll-output">
+```{r}
+# Define and fit model
+model2 <- logistic_reg(engine = "glm", mode="classification") %>%
+  fit(Depression ~ ., data = train)
+
+tidy(model2)
+extract_spec_parsnip(model2)
+
+# Feature Importance Plot
+coeff2 <- tidy(model2) %>% 
+  arrange(desc(abs(estimate)))
+
+ggplot(coeff2, aes(y = term, x = estimate, fill = term)) + geom_col() + 
+  labs(title="Model feature importance",  fill="Feature") + 
+  xlab("Model sensitivity with respsect to feature") + 
+  ylab("Feature, Survey Question")
+
+
+# Predictions
+pred_y2 <- predict(model2, test,
+                      type = "class")
+
+pred_proba2 <- predict(model2, test,
+                      type = "prob")
+
+results2 <- test %>%
+           select(Depression) %>%
+           bind_cols(pred_y2, pred_proba2)
+
+
+# metrics
+scores2 <- accuracy(results2, truth = Depression, estimate = .pred_class)
+
+scores2 <- scores2 %>% add_row(
+  precision(results2, truth = Depression, estimate = .pred_class)
+)
+
+scores2 <- scores2 %>% add_row(
+  recall(results2, truth = Depression, estimate = .pred_class)
+)
+
+scores2 <- scores2 %>% add_row(
+  kap(results2, truth = Depression, estimate = .pred_class)
+)
+
+scores2 <- scores2 %>% add_row(
+  roc_auc(results2, Depression, .pred_0)
+)
+
+scores2
+
+cmat2 <- conf_mat(results2, Depression, .pred_class)
+cmat2
+summary(cmat2)
+```
+</div>
+
+### Direct Comparison
+
+ - similar performance in terms of accuracy, higher precision and lower recall
+   - as discussed, this might be worse, depending on desired application of 
+     model. however differences are slight
+ - might expect bigger changes to original model performance by altering `glmnet` 
+   hyperparameters
+```{r}
+comparison <- select(scores, .metric)
+comparison["glmnet"] <- select(scores, .estimate)
+comparison["glm"] <- select(scores2, .estimate)
+comparison
+
+roc_c2 <- roc_curve(results2, Depression, .pred_0)
+pr_c2 <- pr_curve(results2, Depression, .pred_0)
+roc_c["spec2"] <- roc_c2["specificity"]
+roc_c["sens2"] <- roc_c2["sensitivity"]
+pr_c["recall2"] <- pr_c2["recall"]
+pr_c["precision2"] <- pr_c2["precision"]
+```
+```{r echo=FALSE}
+ggplot(roc_c) + 
+  geom_line(aes(x = 1-specificity, y = sensitivity, 
+                color=paste("glmnet, auc =", round(comparison[5,"glmnet"],3))),
+            linewidth=3) + 
+  geom_line(aes(x = 1-spec2, y = sens2, 
+                color=paste("glm, auc =", round(comparison[5,"glm"],3))),
+            linewidth=1.5, linetype=2) + 
+  geom_abline(linetype=2) + 
+  labs(title = "ROC Curves", subtitle="Models show similar performance",
+       color="LogReg engine") + 
+  xlab("False Positive Rate") + 
+  ylab("True Positive Rate")
+
+```
+<hr>
+```{r echo=FALSE, }
+base_rate <- 1-(sum(as.numeric(test$Depression)-1)/dim(test)[1])
+
+ggplot(pr_c) + 
+  geom_line(aes(x = recall, y = precision, color="glmnet"),linewidth=3) +  
+  geom_line(aes(x = recall2, y = precision2, color="glm"), 
+            linewidth=1.5, linetype=2) +  
+  geom_hline(yintercept=base_rate, linetype=2) +  
+  annotate("text", x=0.5, y=base_rate+.005, 
+           label=paste("test set NO Depression rate", 100*round(base_rate,2), 
+                       "%")) + 
+  labs(title = "Precision-Recall Curves", 
+       subtitle="Models show similar performance",
+       color="LogReg engine") + 
+  xlab("Recall") + 
+  ylab("Precision")
+```
