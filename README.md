@@ -3,8 +3,15 @@
 ***[Kaggle Playground S4 E11, Mental Health Survey](https://nbpub.github.io/Health_Data_Demonstrations/)***
 
 This repository will host healthcare focused data analysis notebooks, demonstrating usage of
-[R Markdown](https://rmarkdown.rstudio.com/) notebooks and popular [R](https://www.r-project.org/) Libraries:
-[tidyverse](https://www.tidyverse.org/), [tidymodels](https://www.tidymodels.org/), [gt](https://gt.rstudio.com/), etc . . .
+**R Markdown** notebooks and popular **R**(https://www.r-project.org/) Libraries:
+*tidyverse, [tidymodels](https://www.tidymodels.org/), [gt](https://gt.rstudio.com/), etc . . .
+
+[![R](https://www.r-project.org/Rlogo.png "R")](https://www.r-project.org/)
+[![R Markdown](https://github.com/rstudio/rmarkdown/raw/main/man/figures/logo.png "R Markdown")](https://rmarkdown.rstudio.com/)
+[![tidyverse](https://www.tidyverse.org/css/images/hex/tidyr.png "tidyverse")](https://www.tidyverse.org/)
+[![tidymodels](https://www.tidymodels.org/images/tidymodels.png "tidymodels")](https://www.tidymodels.org/)
+[![gt](https://gt.rstudio.com/reference/figures/logo.svg "gt")](https://gt.rstudio.com/)
+[![gtsummary](https://www.danieldsjoberg.com/gtsummary/reference/figures/logo.png "gtsummary")](https://www.danieldsjoberg.com/gtsummary/)
 
 One project will be featured on the repository [webpage](https://nbpub.github.io/Health_Data_Demonstrations/), 
 and all analyses are summarized in the table below.
