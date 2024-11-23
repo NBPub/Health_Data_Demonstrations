@@ -7,7 +7,7 @@
 <a href="https://www.r-project.org/"><img src="https://www.r-project.org/Rlogo.png" height="75" title="R" /></a> &nbsp;
 <a href="https://rmarkdown.rstudio.com/"><img src="https://github.com/rstudio/rmarkdown/raw/main/man/figures/logo.png" height="75" title="R Markdown" /></a> &nbsp;
 <a href="https://yihui.org/knitr/"><img src="https://upload.wikimedia.org/wikipedia/commons/3/34/Knitr_hex_logo.svg" height="75" title="knitr" /></a> &nbsp;
-<a href="https://www.tidyverse.org/"><img src="https://www.tidyverse.org/css/images/hex/tidyr.png" height="75" title="tidyverse" /></a> &nbsp;
+<a href="https://www.tidyverse.org/"><img src="https://upload.wikimedia.org/wikipedia/commons/f/ff/Tidyverse_hex_logo.png" height="75" title="tidyverse" /></a> &nbsp;
 <a href="https://www.tidymodels.org/"><img src="https://www.tidymodels.org/images/tidymodels.png" height="75" title="tidymodels" /></a> &nbsp;
 <a href="https://gt.rstudio.com/"><img src="https://gt.rstudio.com/reference/figures/logo.svg" height="75" title="gt (tables)" /></a> &nbsp;
 <a href="https://www.danieldsjoberg.com/gtsummary/"><img src="https://www.danieldsjoberg.com/gtsummary/reference/figures/logo.png" height="75" title="gt summary (tables)" /></a> &nbsp;
