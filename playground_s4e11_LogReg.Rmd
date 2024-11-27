@@ -28,7 +28,7 @@ blockquote { font-size: 1em;}
 <div class="stick-top"><a href="#contents" style="color: white;">Table of Contents</a></div>
 
 <div style="display:inline-block;"> 
-  <a href="https://github.com/NBPub/Health_Data_Demonstrations/blob/main/playground_s4e11_LogReg.Rmd" style="margin-left:40vw;">
+  <a href="https://github.com/NBPub/Health_Data_Demonstrations/blob/main/playground_s4e11_LogReg.Rmd" style="margin-left:30vw;">
     <img src="https://raw.githubusercontent.com/rstudio/rmarkdown/main/man/figures/logo.png" 
      width="50" title="R Markdown file"/>
   </a>
@@ -44,10 +44,12 @@ blockquote { font-size: 1em;}
 
 ## Contents
  - [Overview](#overview)
+   - [Conclusions](#conclusions)
+   - [Dataset](#libraries-and-dataset)
  - [Data Preparation](#data-preparation)
    - [Unused Features](#unused-features-to-be-dropped)
      - [Name](#name)
-     - [CPGA](#cpga)
+     - [CGPA](#cgpa)
      - [City](#city)
      - [Profession](#profession)
      - [Degree](#degree)
@@ -61,20 +63,21 @@ blockquote { font-size: 1em;}
    - [Continuous Features](#continuous-features)
      - [Collinearity ](#relationship-with-student---working-professional)
    - [Ordinal Features](#ordinal-features)
- - *Final Preparation Steps*
+ - [Final Preparation Steps](#final-steps)
    - [Clean Columns](#drop-columns)
    - [Missing Data](#missing-values)
    - [Summary Tables](#final-summary-tables)
  - [Modeling](#modeling)
    - [Feature Importance](#feature-importance)
    - [Evaluation and Metrics](#model-evaluation)
- - [Model Comparison](#comparison-to-glm-engine)
-   - [Side-by-Side](#direct-comparison)
+ - [Alternate Logistic Regression Engine](#comparison-to-glm-engine)
+   - [Side-by-Side Metrics](#direct-comparison)
 
+<br><hr><br>
 
 ## Overview
 
- - Background
+ - **Background**
    - synthetic dataset provided by 
  [Kaggle](https://www.kaggle.com/competitions/playground-series-s4e11/data), 
  based on a previously published Depression [survey](https://www.kaggle.com/datasets/sumansharmadataworld/depression-surveydataset-for-analysis)
@@ -84,7 +87,7 @@ blockquote { font-size: 1em;}
    - the goal was to extract insights on everyday (non-clinical) factors that may 
    correlate with mental health risks and to develop models for mental health 
    prediction
- - Purpose
+ - **Purpose**
    - **This notebook will exemplify data exploration, cleaning, and processing, 
    and then ultimately train a simple logistic regression model for prediction of 
    the target feature, `Depression`.**
@@ -94,7 +97,8 @@ blockquote { font-size: 1em;}
    approaches taken outside of this notebook.
      - Accordingly, opportunities for more extensive data preparation, such as 
      feature engineering, were not employed in this notebook and modeling effort.
- - R Libraries, document created with **[R Markdown](https://rmarkdown.rstudio.com/)**
+ - **R Libraries**
+   - **[R Markdown](https://rmarkdown.rstudio.com/)**, created this document
    - **[dplyr](https://dplyr.tidyverse.org/)**, data processing
    - **[gtsummary](https://www.danieldsjoberg.com/gtsummary/)**, tables and statistics
      - also used **[knitr](https://yihui.org/knitr/)**
@@ -104,6 +108,68 @@ blockquote { font-size: 1em;}
      - [glmnet](https://glmnet.stanford.edu/)
      - [glm](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/glm)
    - **[yardstick](https://yardstick.tidymodels.org/)**, model metrics
+   
+### Conclusions
+
+ - **Data Quality**
+   - survey data is relatively clean and features exhibit a variety of 
+   datatypes (numerical, ordinal, binary, text)
+     - all features were encoded to be numerical for logistic regression models
+   - small proportion of data is missing, after accounting for class-specific 
+   features (various survey questions were specific to **students** or **working 
+   professionals** [see here](#combine-class-specific-features))
+   - some questions appear to have suggested answers, but a small fraction of 
+   responses fall outside the suggestions and need to be inferred or dropped 
+   (cleaning example with [ordinal features](#clean-and-encode-ordinal-features))
+   - more extensive cleaning would be required if including the 
+   [unused features](#unused-features-to-be-dropped)
+     - variety of abbreviations and punctuation choices allow a few unique 
+     responses to map to one "real" answer
+     - larger fraction of responses appear to be for incorrect question (ex: 
+     city name provided for degree)
+ - **Factors Contributing to Depression Risk**
+   - *determined from [data exploration](#exploration-tables-and-graphs) and 
+   logistic regression model's [feature importance](#feature-importance)*
+   - having **suicidal thoughts** correlates most strongly with depression, as might 
+   be obvious
+   - depression rates were much higher for **students** than **working 
+   professionals**
+     - there more total depressed students than degressed professionals, despite 
+     being outnumbered 3:1!
+   - expected trends with [ordinal features](#ordinal-features)
+     - stronger contribution from  negative traits **financial stress** and 
+     **pressure** than from positive traits, such as **satisfaction**
+   - some outliers for depression rates based on **[geography](#city)**, 
+   **[profession](#profession)**, and **[education](#degree)**
+     - these features were not considered in the model
+ - **Confounding Factors**
+   - depression risks associated with **age, work/study hours**, and certain 
+   **education** levels are likely convoluted with respondent's status as a 
+   **student** or **professional**
+     - a simple approach could be to develop separate prediction models for 
+     students and professionals, and also re-explore the categorized data sets
+ - **Survey Design Notes**
+   - survey respondents' ages range from 18-60 years and is distributed somewhat 
+   uniformly
+   - males and females represented equally
+   - general education level seems high, especially considering that the lower 
+   reported levels are from current students
+   - most respondents from more populated cities in India, geography was not 
+   analyzed more closely
+ - **Modeling**
+   - simple Logistic Regression models [perform well](#model-metrics), and high 
+   recall could be considered ideal for a possible use-cases
+   - metrics are similar for training and test sets (80/20 split), indicating 
+   that the model generalizes well enough to the selected data
+     - *should use larger split for test set and cross-validation to be more 
+       definitive with this conclusion*
+   - using more complex models may be less beneficial than data processing and 
+   feature engineering, in terms of performance and interpretability
+   - more comprehensive modeling effort, including competition submissions 
+   carried out in a separate notebook
+     - *link to be added*
+
+### Libraries and Dataset
 
 ```{r}
 library(tidyverse)
@@ -120,6 +186,8 @@ names(data) <- gsub("/", "_", names(data))
 
 glimpse(data[1:8,])
 ```
+<br><hr><br>
+
 ## Data Preparation
 
  - cleaning, encoding, and dropping features
@@ -339,6 +407,7 @@ data <- data %>% mutate(Suicidal_Thoughts = ifelse(
 data <- data %>% mutate(Family_History = ifelse(
   Family_History_of_Mental_Illness=="Yes",1,0))
 ```
+<br><hr><br>
 
 ## Exploration Tables and Graphs
  - feature distributions, target relationships, and interrelationships
@@ -757,6 +826,10 @@ ggplot(
 ```
 </div>
 
+<br><hr><br>
+
+## Final Steps
+
 ### Drop Columns
  - drop processed and unused features
  - remaining features are now numeric for model
@@ -841,6 +914,7 @@ tbl_summary(data, by=Depression,
 ``` 
 </div>
 
+<br><hr><br>
 
 ## Modeling
 
@@ -1041,6 +1115,44 @@ summary(cmat)
 ```
 </div><br>
 
+**Test Set vs Training Set Scores**
+
+```{r echo=F}
+# Class Predictions
+pred_y_train <- predict(model, train,
+                      type = "class")
+
+# Class Probabilities
+pred_proba_train <- predict(model, train,
+                      type = "prob")
+
+results_train <- train %>%
+           select(Depression) %>%
+           bind_cols(pred_y_train, pred_proba_train)
+
+scores_train <- accuracy(results_train, truth = Depression, estimate = .pred_class)
+
+scores_train <- scores_train %>% add_row(
+  precision(results_train, truth = Depression, estimate = .pred_class)
+)
+scores_train <- scores_train %>% add_row(
+  recall(results_train, truth = Depression, estimate = .pred_class)
+)
+scores_train <- scores_train %>% add_row(
+  kap(results_train, truth = Depression, estimate = .pred_class)
+)
+scores_train <- scores_train %>% add_row(
+  roc_auc(results_train, Depression, .pred_0)
+)
+
+train_test_comp <- scores %>% select(.metric, .estimate) %>% 
+  rename(test_scores = .estimate)
+
+train_test_comp$train_scores <- scores_train$.estimate
+train_test_comp
+```
+
+
 **Receiver Operating Characteristic and Precision-Recall Curves**
 <div class="scroll-output">
 ```{r}
@@ -1077,7 +1189,9 @@ slice_sample(pr_c, n=10) %>% arrange(.threshold)
 ```
 </div>
 
-### Comparison to GLM engine
+<br><hr><br>
+
+## Comparison to GLM engine
 
  - model handles one-hot-encoded binary features differently, 
  only uses one of two

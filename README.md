@@ -16,7 +16,7 @@
 This repository hosts healthcare focused data analysis notebooks, demonstrating usage of R,
 R Markdown notebooks, and popular data science and presentation libraries. 
 
-One analysis notebook is via Github [Pages](https://pages.github.com/).
+One analysis notebook is featured via Github [Pages](https://pages.github.com/).
 
 ## Summary Table
 
